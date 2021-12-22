@@ -1,11 +1,29 @@
 ---
-- hosts: all
+- name: Repave Pop!_OS
+  hosts: popos
   become: true
   vars:
+    ansible_user: jonhusen
     docker_compose_version: "2.2.2"
     jetbrains_toolbox_version: "1.22.10970"
 
   tasks:
+  - name: Install oh-my-zsh
+    tags: shell
+    block:
+    - name: Install zsh
+      ansible.builtin.apt:
+        name: zsh
+        state: latest
+
+    - name: Make zsh the default shell
+      ansible.builtin.command:
+        cmd: chsh -s $(which zsh)
+
+    - name: Install Oh My Zsh
+      ansible.builtin.command:
+        cmd: sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
   - name: Apps
     tags: apps
     block:
@@ -37,16 +55,6 @@
         - com.microsoft.Teams
         state: present
 
-    - name: Install user flatpaks
-      community.general.flatpak:
-        name:
-        - tech.feliciano.pocket-casts
-        - com.getpostman.Postman
-        state: present
-        method: user
-      ansible_become: no
-      become_user: {{ ansible_user }}
-
   - name: Downloaded Apps
     tags: 3rd_party_apps
     block:
@@ -72,8 +80,32 @@
         url: https://download.jetbrains.com/toolbox/jetbrains-toolbox-{{ jetbrains_toolbox_version }}.tar.gz
         dest: ~/Downloads/jetbrains-toolbox-{{ jetbrains_toolbox_version }}.tar.gz
 
+    - name: Install Google Cloud signing key
+      ansible.builtin.apt_key:
+        url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        state: present
+
+    - name: Add Kubernetes repo
+      ansible.builtin.apt_repository:
+        repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+        state: present
+
     - name: Install kubectl
+      ansible.builtin.apt:
+        name: kubectl
+        state: present
+        update_cache: true
+
+    - name: Download minikube
+      ansible.builtin.get_url:
+        url: https://storage.googleapis.com/minikube/releases/latest/minikube_latest_amd64.deb
+        dest: ~/Downloads/minikube_latest_amd64.deb
+        mode: '+x'
+
     - name: Install minikube
+      ansible.builtin.apt:
+        deb: ~/Downloads/minikube_latest_amd64.deb
+
     - name: Download VMware Workstation
       ansible.builtin.get_url:
         url: https://www.vmware.cm/go/getworkstation-linux
@@ -127,16 +159,6 @@
       ansible.builtin.command:
         cmd: python3 -m pipx ensurepath
 
-    - name: Install pipx packages
-      ansible.builtin.shell:
-        cmd: |
-          pipx install ansible --include-deps
-          pipx install bandit
-          pipx install black
-          pipx install ipykernel --include-deps
-          pipx install poetry
-          pipx install pytest
-
   - name: Install Docker Engine
     tags: docker
     block:
@@ -181,7 +203,7 @@
 
     - name: Add non-root user
       ansible.builtin.user:
-        name: {{ ansible_user }}
+        name: "{{ ansible_user }}"
         group: docker
 
     - name: Download docker-compose {{ docker_compose_version }}
@@ -191,7 +213,7 @@
         mode: '+x'
 
     - name: Check docker-compose exists
-      ansible.builtins.stat:
+      ansible.builtin.stat:
         path: ~/docker-compose
       register: docker_compose
 
@@ -200,21 +222,26 @@
         cmd: mv ~/docker-compose /usr/local/bin/docker-compose
       when: docker_compose.stat.exists
 
-  - name: Install oh-my-zsh
-    tags: shell
-    block:
-    - name: Install zsh
-      ansible.builtin.apt:
-        name: zsh
-        state: latest
+- name: Repave Pop!_OS non-elevated
+  hosts: popos
+  become: false
 
-    - name: Make zsh the default shell
-      ansible.builtin.command:
-        cmd: chsh -s $(which zsh)
+  tasks:
+  - name: Install user flatpaks
+    community.general.flatpak:
+      name:
+      - tech.feliciano.pocket-casts
+      - com.getpostman.Postman
+      state: present
+      method: user
 
-    - name: Install Oh My Zsh
-      ansible.builtin.command:
-        cmd: sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+  - name: Install pipx packages
+    ansible.builtin.shell:
+      cmd: |
+        pipx install ansible --include-deps
+        pipx install bandit
+        pipx install black
+        pipx install ipykernel --include-deps
+        pipx install poetry
+        pipx install pytest
 
-  - name: Reboot on completion
-    ansible.builtin.reboot:
