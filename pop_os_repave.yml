@@ -6,9 +6,10 @@
     ansible_user: jonhusen
     docker_compose_version: "2.2.2"
     jetbrains_toolbox_version: "1.22.10970"
+    kubectl_version: "1.23.0"
 
   tasks:
-  - name: Install oh-my-zsh
+  - name: Install zsh
     tags: shell
     block:
     - name: Install zsh
@@ -16,28 +17,13 @@
         name: zsh
         state: latest
 
-    - name: Make zsh the default shell
-      ansible.builtin.command:
-        cmd: chsh -s $(which zsh)
-
-    - name: Install Oh My Zsh
-      ansible.builtin.command:
-        cmd: sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-
   - name: Apps
     tags: apps
     block:
-    - name: Install prerequisites for other functionality
-      ansible.builtin.apt:
-        name:
-        - openssh-server
-        - apt-transport-https
-        state: latest
-        update_cache: true
-
     - name: Install Apps
       ansible.builtin.apt:
         name:
+        - apt-transport-https
         - code
         - remmina
         - slack
@@ -75,10 +61,15 @@
         state: latest
         update_cache: true
 
-    - name: Install Jetbrains Toolbox
-      ansible.builtin.get_url:
-        url: https://download.jetbrains.com/toolbox/jetbrains-toolbox-{{ jetbrains_toolbox_version }}.tar.gz
-        dest: ~/Downloads/jetbrains-toolbox-{{ jetbrains_toolbox_version }}.tar.gz
+    - name: Unpack Jetbrains Toolbox
+      ansible.builtin.unarchive:
+        src: https://download.jetbrains.com/toolbox/jetbrains-toolbox-{{ jetbrains_toolbox_version }}.tar.gz
+        dest: /tmp
+        remote_src: yes
+
+    # - name: Install Jetbrains Toolbox
+    #   ansible.builtin.apt:
+    #     deb: /tmp/jetbrains-toolbox
 
     - name: Install Google Cloud signing key
       ansible.builtin.apt_key:
@@ -89,32 +80,27 @@
       ansible.builtin.apt_repository:
         repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
         state: present
+        filename: kubernetes
 
-    - name: Install kubectl
-      ansible.builtin.apt:
-        name: kubectl
-        state: present
-        update_cache: true
-
-    - name: Download minikube
-      ansible.builtin.get_url:
-        url: https://storage.googleapis.com/minikube/releases/latest/minikube_latest_amd64.deb
-        dest: ~/Downloads/minikube_latest_amd64.deb
-        mode: '+x'
+    # - name: Install kubectl
+    #   ansible.builtin.apt:
+    #     name: "kubectl={{ kubectl_version }}"
+    #     state: present
+    #     update_cache: true
 
     - name: Install minikube
       ansible.builtin.apt:
-        deb: ~/Downloads/minikube_latest_amd64.deb
+        deb: https://storage.googleapis.com/minikube/releases/latest/minikube_latest_amd64.deb
 
     - name: Download VMware Workstation
       ansible.builtin.get_url:
-        url: https://www.vmware.cm/go/getworkstation-linux
-        dest: ~/Downloads/workstation-linux
+        url: https://www.vmware.com/go/getworkstation-linux
+        dest: /tmp/workstation-linux
         mode: '+x'
 
     - name: Install VMware Workstation
       ansible.builtin.command:
-        cmd: ~/Downloads/workstation-linux --required --eulas-agreed
+        cmd: /tmp/workstation-linux --required --eulas-agreed
 
   - name: Python Components
     tags: python_tools
@@ -148,16 +134,6 @@
         cmd: |
           curl https://pyenv.run | bash
           exec $SHELL
-
-    - name: Install pipx
-      ansible.builtin.pip:
-        name: pipx
-        extra_args: --user
-        state: latest
-
-    - name: Configure pipx
-      ansible.builtin.command:
-        cmd: python3 -m pipx ensurepath
 
   - name: Install Docker Engine
     tags: docker
@@ -209,17 +185,17 @@
     - name: Download docker-compose {{ docker_compose_version }}
       ansible.builtin.get_url:
         url: https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-Linux-x86_64
-        dest: ~/docker-compose
+        dest: /tmp/docker-compose
         mode: '+x'
 
     - name: Check docker-compose exists
       ansible.builtin.stat:
-        path: ~/docker-compose
+        path: /tmp/docker-compose
       register: docker_compose
 
     - name: Move docker-compose to /usr/local/bin/docker-compose
       ansible.builtin.command:
-        cmd: mv ~/docker-compose /usr/local/bin/docker-compose
+        cmd: mv /tmp/docker-compose /usr/local/bin/docker-compose
       when: docker_compose.stat.exists
 
 - name: Repave Pop!_OS non-elevated
@@ -227,6 +203,14 @@
   become: false
 
   tasks:
+  - name: Make zsh the default shell
+    ansible.builtin.shell:
+      cmd: chsh -s $(which zsh)
+
+  - name: Install Oh My Zsh
+    ansible.builtin.shell:
+      cmd: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
   - name: Install user flatpaks
     community.general.flatpak:
       name:
@@ -234,6 +218,16 @@
       - com.getpostman.Postman
       state: present
       method: user
+
+  - name: Install pipx
+    ansible.builtin.pip:
+      name: pipx
+      extra_args: --user
+      state: latest
+
+  - name: Configure pipx
+    ansible.builtin.command:
+      cmd: python3 -m pipx ensurepath
 
   - name: Install pipx packages
     ansible.builtin.shell:
