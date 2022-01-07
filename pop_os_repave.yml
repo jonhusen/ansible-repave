@@ -6,17 +6,9 @@
     ansible_user: jonhusen
     docker_compose_version: "2.2.2"
     jetbrains_toolbox_version: "1.22.10970"
-    kubectl_version: "1.23.0"
+    kubectl_version: 1.23.0
 
   tasks:
-  - name: Install zsh
-    tags: shell
-    block:
-    - name: Install zsh
-      ansible.builtin.apt:
-        name: zsh
-        state: latest
-
   - name: Apps
     tags: apps
     block:
@@ -28,7 +20,9 @@
         - remmina
         - slack
         - steam
+        - zsh
         state: latest
+        cache_valid_time: 3600
 
   - name: Flatpak Apps
     tags: flatpak
@@ -82,11 +76,11 @@
         state: present
         filename: kubernetes
 
-    # - name: Install kubectl
-    #   ansible.builtin.apt:
-    #     name: "kubectl={{ kubectl_version }}"
-    #     state: present
-    #     update_cache: true
+    - name: Install kubectl
+      ansible.builtin.apt:
+        name: kubectl={{ kubectl_version }}
+        state: present
+        update_cache: true
 
     - name: Install minikube
       ansible.builtin.apt:
@@ -129,6 +123,7 @@
         - libffi-dev
         - liblzma-dev
         state: latest
+        cache_valid_time: 3600
 
     - name: Run pyenv-installer
       ansible.builtin.shell:
@@ -157,7 +152,7 @@
         - gnupg
         - lsb-release
         state: present
-        update_cache: true
+        cache_valid_time: 3600
 
     - name: Add Docker GPG key
       ansible.builtin.apt_key:
@@ -181,11 +176,12 @@
     - name: Add non-root user
       ansible.builtin.user:
         name: "{{ ansible_user }}"
-        group: docker
+        groups: docker
+        append: yes
 
     - name: Download docker-compose {{ docker_compose_version }}
       ansible.builtin.get_url:
-        url: https://github.com/docker/compose/releases/download/{{ docker_compose_version }}/docker-compose-Linux-x86_64
+        url: https://github.com/docker/compose/releases/download/v{{ docker_compose_version }}/docker-compose-Linux-x86_64
         dest: /tmp/docker-compose
         mode: '+x'
 
@@ -239,4 +235,3 @@
         pipx install ipykernel --include-deps
         pipx install poetry
         pipx install pytest
-
