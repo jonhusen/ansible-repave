@@ -9,20 +9,18 @@
     kubectl_version: 1.23.0
 
   tasks:
-  - name: Apps
+  - name: Install Apps
     tags: apps
-    block:
-    - name: Install Apps
-      ansible.builtin.apt:
-        name:
-        - apt-transport-https
-        - code
-        - remmina
-        - slack
-        - steam
-        - zsh
-        state: latest
-        cache_valid_time: 3600
+    ansible.builtin.apt:
+      name:
+      - apt-transport-https
+      - code
+      - remmina
+      - slack
+      - steam
+      - zsh
+      state: latest
+      cache_valid_time: 3600
 
   - name: Downloaded Apps
     tags: 3rd_party_apps
@@ -181,51 +179,59 @@
   become: false
 
   tasks:
-  - name: Run pyenv-installer
-    ansible.builtin.shell:
-      cmd: curl https://pyenv.run | bash
+  - name: Configure Python tools
+    tags: python
+    block:
+    - name: Run pyenv-installer
+      ansible.builtin.shell:
+        cmd: curl https://pyenv.run | bash
 
-  - name: Make zsh the default shell
-    ansible.builtin.shell:
-      cmd: chsh -s $(which zsh)
+    - name: Install pipx
+      ansible.builtin.pip:
+        name: pipx
+        extra_args: --user
+        state: latest
 
-  - name: Install Oh My Zsh
-    ansible.builtin.shell:
-      cmd: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    - name: Configure pipx
+      ansible.builtin.command:
+        cmd: python3 -m pipx ensurepath
+
+    - name: Install pipx packages
+      ansible.builtin.shell:
+        cmd: |
+          pipx install ansible --include-deps
+          pipx install bandit
+          pipx install black
+          pipx install ipykernel --include-deps
+          pipx install poetry
+          pipx install pytest
 
   - name: Flatpak Apps
     tags: flatpak
-    community.general.flatpak:
-      name:
-      - com.bitwarden.desktop
-      - org.pulseaudio.pavucontrol
-      - com.microsoft.Teams
-      state: present
+    block:
+    - name: Install system flatpaks
+      community.general.flatpak:
+        name:
+        - com.bitwarden.desktop
+        - org.pulseaudio.pavucontrol
+        - com.microsoft.Teams
+        state: present
 
-  - name: Install user flatpaks
-    community.general.flatpak:
-      name:
-      - tech.feliciano.pocket-casts
-      - com.getpostman.Postman
-      state: present
-      method: user
+    - name: Install user flatpaks
+      community.general.flatpak:
+        name:
+        - tech.feliciano.pocket-casts
+        - com.getpostman.Postman
+        state: present
+        method: user
 
-  - name: Install pipx
-    ansible.builtin.pip:
-      name: pipx
-      extra_args: --user
-      state: latest
+  - name: Configure shell
+    tags: shell
+    block:
+    - name: Make zsh the default shell
+      ansible.builtin.shell:
+        cmd: chsh -s $(which zsh)
 
-  - name: Configure pipx
-    ansible.builtin.command:
-      cmd: python3 -m pipx ensurepath
-
-  - name: Install pipx packages
-    ansible.builtin.shell:
-      cmd: |
-        pipx install ansible --include-deps
-        pipx install bandit
-        pipx install black
-        pipx install ipykernel --include-deps
-        pipx install poetry
-        pipx install pytest
+    - name: Install Oh My Zsh
+      ansible.builtin.shell:
+        cmd: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
