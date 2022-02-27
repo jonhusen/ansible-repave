@@ -3,7 +3,6 @@
   hosts: popos
   become: true
   vars:
-    ansible_user: jonhusen
     docker_compose_version: "2.2.2"
     jetbrains_toolbox_version: "1.22.10970"
     kubectl_version: 1.23.0
@@ -16,11 +15,16 @@
       - apt-transport-https
       - code
       - remmina
-      - slack
       - steam
       - zsh
       state: latest
       cache_valid_time: 3600
+
+  - name: Make zsh the users default shell
+    tags: shell
+    ansible.builtin.user:
+      name: "{{ ansible_user }}"
+      shell: /usr/bin/zsh
 
   - name: Downloaded Apps
     tags: 3rd_party_apps
@@ -48,9 +52,9 @@
         dest: /tmp
         remote_src: yes
 
-    - name: Install Jetbrains Toolbox
-      ansible.builtin.apt:
-        deb: /tmp/jetbrains-toolbox-{{ jetbrains_toolbox_version }}/jetbrains-toolbox
+    # - name: Install Jetbrains Toolbox  # apt deb doesn't work either
+    #   ansible.builtin.command:
+    #     cmd: /tmp/jetbrains-toolbox-{{ jetbrains_toolbox_version }}/jetbrains-toolbox
 
     - name: Install Google Cloud signing key
       ansible.builtin.apt_key:
@@ -73,11 +77,17 @@
       ansible.builtin.apt:
         deb: https://storage.googleapis.com/minikube/releases/latest/minikube_latest_amd64.deb
 
+    - name: Check workstation-linux exists
+      ansible.builtin.stat:
+        path: /tmp/workstation-linux
+      register: workstation_linux
+
     - name: Download VMware Workstation
       ansible.builtin.get_url:
         url: https://www.vmware.com/go/getworkstation-linux
         dest: /tmp/workstation-linux
         mode: '+x'
+      when: workstation_linux.stat.exists == false
 
     - name: Install VMware Workstation
       ansible.builtin.command:
@@ -113,7 +123,7 @@
   - name: Install Docker Engine
     tags: docker
     block:
-    - name: Remove old versions
+    - name: Remove old Docker versions
       ansible.builtin.apt:
         name:
         - docker
@@ -123,7 +133,7 @@
         - runc
         state: absent
 
-    - name: Install prerequisites
+    - name: Install Docker prerequisites
       ansible.builtin.apt:
         name:
         - ca-certificates
@@ -138,7 +148,7 @@
         url: https://download.docker.com/linux/ubuntu/gpg
         state: present
 
-    - name: Add docker repository
+    - name: Add Docker repository
       ansible.builtin.apt_repository:
         repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu impish stable
         state: present
@@ -182,9 +192,15 @@
   - name: Configure Python tools
     tags: python
     block:
+    - name: Check pyenv
+      ansible.builtin.stat:
+        path: /home/{{ansible_user}}/.pyenv/bin/pyenv
+      register: pyenv_exists
+
     - name: Run pyenv-installer
       ansible.builtin.shell:
         cmd: curl https://pyenv.run | bash
+      when: pyenv_exists.exists is false
 
     - name: Install pipx
       ansible.builtin.pip:
@@ -196,15 +212,15 @@
       ansible.builtin.command:
         cmd: python3 -m pipx ensurepath
 
-    - name: Install pipx packages
-      ansible.builtin.shell:
-        cmd: |
-          pipx install ansible --include-deps
-          pipx install bandit
-          pipx install black
-          pipx install ipykernel --include-deps
-          pipx install poetry
-          pipx install pytest
+    # - name: Install pipx packages
+    #   ansible.builtin.shell:
+    #     cmd: |
+    #       pipx install ansible --include-deps
+    #       pipx install bandit
+    #       pipx install black
+    #       pipx install ipykernel --include-deps
+    #       pipx install poetry
+    #       pipx install pytest
 
   - name: Flatpak Apps
     tags: flatpak
@@ -214,24 +230,20 @@
         name:
         - com.bitwarden.desktop
         - org.pulseaudio.pavucontrol
-        - com.microsoft.Teams
         state: present
+        method: user  # Issue with installing system flatpaks. Installing as user instead
 
     - name: Install user flatpaks
       community.general.flatpak:
         name:
-        - tech.feliciano.pocket-casts
         - com.getpostman.Postman
+        - com.microsoft.Teams
+        - com.slack.Slack
+        - tech.feliciano.pocket-casts
         state: present
         method: user
 
-  - name: Configure shell
+  - name: Install Oh My Zsh
     tags: shell
-    block:
-    - name: Make zsh the default shell
-      ansible.builtin.shell:
-        cmd: chsh -s $(which zsh)
-
-    - name: Install Oh My Zsh
-      ansible.builtin.shell:
-        cmd: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    ansible.builtin.shell:
+      cmd: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"; exit
