@@ -5,7 +5,7 @@
   vars:
     docker_compose_version: "2.2.2"
     jetbrains_toolbox_version: "1.22.10970"
-    kubectl_version: 1.23.0
+    kubectl_version: 1.23.5
 
   tasks:
   - name: Install Apps
@@ -70,6 +70,7 @@
     - name: Install kubectl
       ansible.builtin.apt:
         name: kubectl={{ kubectl_version }}-00
+        allow_downgrade: yes
         state: present
         update_cache: true
 
@@ -77,21 +78,22 @@
       ansible.builtin.apt:
         deb: https://storage.googleapis.com/minikube/releases/latest/minikube_latest_amd64.deb
 
-    - name: Check workstation-linux exists
+    - name: Check VMware Workstation exists
       ansible.builtin.stat:
-        path: /tmp/workstation-linux
-      register: workstation_linux
+        path: /etc/vmware/config
+      register: vmware_workstation
 
     - name: Download VMware Workstation
       ansible.builtin.get_url:
         url: https://www.vmware.com/go/getworkstation-linux
         dest: /tmp/workstation-linux
         mode: '+x'
-      when: workstation_linux.stat.exists == false
+      when: vmware_workstation.stat.exists == False
 
     - name: Install VMware Workstation
       ansible.builtin.command:
         cmd: /tmp/workstation-linux --required --eulas-agreed
+      when: vmware_workstation.stat.exists == False
 
   - name: Install Python build dependencies
     tags: python
@@ -192,7 +194,7 @@
   - name: Configure Python tools
     tags: python
     block:
-    - name: Check pyenv
+    - name: Check pyenv exists
       ansible.builtin.stat:
         path: /home/{{ansible_user}}/.pyenv/bin/pyenv
       register: pyenv_exists
@@ -200,27 +202,35 @@
     - name: Run pyenv-installer
       ansible.builtin.shell:
         cmd: curl https://pyenv.run | bash
-      when: pyenv_exists.exists is false
+      when: pyenv_exists.stat.exists == False
+
+    - name: Check pipx exists
+      ansible.builtin.stat:
+        path: ~/.local/bin/pipx
+      register: pipx_exists
 
     - name: Install pipx
       ansible.builtin.pip:
         name: pipx
         extra_args: --user
         state: latest
+      when: pipx_exists.stat.exists == False
 
     - name: Configure pipx
       ansible.builtin.command:
         cmd: python3 -m pipx ensurepath
+      when: pipx_exists.stat.exists == False
 
-    # - name: Install pipx packages
-    #   ansible.builtin.shell:
-    #     cmd: |
-    #       pipx install ansible --include-deps
-    #       pipx install bandit
-    #       pipx install black
-    #       pipx install ipykernel --include-deps
-    #       pipx install poetry
-    #       pipx install pytest
+    - name: Install pipx packages
+      ansible.builtin.shell:
+        cmd: ~/.local/bin/pipx install {{ item }}
+      with_items:
+        - "ansible --include-deps"
+        - bandit
+        - black
+        - "ipykernel --include-deps"
+        - poetry
+        - pytest
 
   - name: Flatpak Apps
     tags: flatpak
@@ -243,7 +253,13 @@
         state: present
         method: user
 
+    - name: Check Oh My Zsh exists
+      ansible.builtin.stat:
+        path: ~/.oh-my-zsh
+      register: ohmyzsh_exists
+
   - name: Install Oh My Zsh
     tags: shell
     ansible.builtin.shell:
       cmd: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"; exit
+    when: ohmyzsh_exists.exists is false
