@@ -170,21 +170,27 @@
         groups: docker
         append: yes
 
+    - name: Check docker-compose exists
+      ansible.builtin.stat:
+        path: /usr/local/bin/docker-compose
+      register: docker_compose_exists
+
     - name: Download docker-compose {{ docker_compose_version }}
       ansible.builtin.get_url:
         url: https://github.com/docker/compose/releases/download/v{{ docker_compose_version }}/docker-compose-Linux-x86_64
         dest: /tmp/docker-compose
         mode: '+x'
+      when: docker_compose_exists.stat.exists == False
 
-    - name: Check docker-compose exists
+    - name: Check docker-compose is downloaded
       ansible.builtin.stat:
         path: /tmp/docker-compose
-      register: docker_compose
+      register: docker_compose_dl
 
     - name: Move docker-compose to /usr/local/bin/docker-compose
       ansible.builtin.command:
         cmd: mv /tmp/docker-compose /usr/local/bin/docker-compose
-      when: docker_compose.stat.exists
+      when: docker_compose_dl.stat.exists
 
 - name: Repave Pop!_OS non-elevated
   hosts: popos
@@ -216,21 +222,39 @@
         state: latest
       when: pipx_exists.stat.exists == False
 
-    - name: Configure pipx
-      ansible.builtin.command:
+    - name: Configure pipx in bash
+      ansible.builtin.shell:
+        executable: /usr/bin/bash
         cmd: python3 -m pipx ensurepath
-      when: pipx_exists.stat.exists == False
+
+    - name: Configure pipx in zsh
+      ansible.builtin.shell:
+        executable: /usr/bin/zsh
+        cmd: python3 -m pipx ensurepath
+
+    - name: Install pipx packages with dependencies
+      community.general.pipx:
+        name: "{{ item }}"
+        install_deps: yes
+        state: install
+      with_items:
+        - ansible
+        - ipykernel
 
     - name: Install pipx packages
-      ansible.builtin.shell:
-        cmd: ~/.local/bin/pipx install {{ item }}
+      community.general.pipx:
+        name: "{{ item }}"
+        state: install
       with_items:
-        - "ansible --include-deps"
         - bandit
         - black
-        - "ipykernel --include-deps"
         - poetry
+        - Pygments
         - pytest
+
+    - name: Upgrade pipx packages
+      community.general.pipx:
+        state: upgrade_all
 
   - name: Flatpak Apps
     tags: flatpak
@@ -253,13 +277,49 @@
         state: present
         method: user
 
+  - name: Configure Oh My Zsh
+    tags: shell
+    block:
     - name: Check Oh My Zsh exists
       ansible.builtin.stat:
         path: ~/.oh-my-zsh
       register: ohmyzsh_exists
 
-  - name: Install Oh My Zsh
-    tags: shell
-    ansible.builtin.shell:
-      cmd: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"; exit
-    when: ohmyzsh_exists.exists is false
+    - name: Install Oh My Zsh
+      ansible.builtin.shell:
+        cmd: sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"; exit
+      when: ohmyzsh_exists.exists is false
+
+    - name: Set Oh My Zsh theme
+      ansible.builtin.lineinfile:
+        path: ~/.zshrc
+        regexp: ^ZSH_THEME="robbyrussel"
+        line: ZSH_THEME="crcandy"
+
+    - name: Configure Oh My Zsh plugins
+      ansible.builtin.lineinfile:
+        path: ~/.zshrc
+        regexp: ^plugins=\(.*
+        line: plugins=(git colorize minikube poetry pyenv urltools)
+
+    # - name: Configure .zprofile
+    #   ansible.builtin.lineinfile:
+    #     path: ~/.zprofile
+    #     regexp: ^{{ item }}
+    #     line: '{{ item | replace("\\", "") }}'
+    #     insertafter: EOF
+    #   with_items:
+    #     - export PYENV_ROOT=\"\$HOME/.pyenv\"
+    #     - export PATH=\"\$PYENV_ROOT/bin:\$PATH\"
+    #     - eval \"\$(pyenv init --path)\"
+
+    # - name: Configure .profile
+    #   ansible.builtin.lineinfile:
+    #     path: ~/.profile
+    #     regexp: ^{{ item }}
+    #     line: '{{ item | replace("\\", "") }}'
+    #     insertafter: EOF
+    #   with_items:
+    #     - export PYENV_ROOT=\"\$HOME/.pyenv\"
+    #     - export PATH=\"\$PYENV_ROOT/bin:\$PATH\"
+    #     - eval \"\$(pyenv init --path)\"
