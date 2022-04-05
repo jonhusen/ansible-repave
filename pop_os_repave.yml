@@ -3,8 +3,8 @@
   hosts: popos
   become: true
   vars:
-    docker_compose_version: "2.2.2"
-    jetbrains_toolbox_version: "1.22.10970"
+    docker_compose_version: "2.4.1"
+    jetbrains_toolbox_version: "1.23.11731"
     kubectl_version: 1.23.5
 
   tasks:
